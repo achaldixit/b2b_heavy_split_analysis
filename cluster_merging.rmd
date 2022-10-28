@@ -1,0 +1,102 @@
+---
+title: "Cluster Merging"
+output: html_notebook
+---
+```{r}
+library(tidyverse)
+library(dbplyr)
+library(DBI)
+
+load("/rstudio-dwh-s3/shibaprasad/lm_selected_sc.RData")
+clusters <- lm_selected_sc
+```
+
+```{r}
+# load clusters are obtained using K-means, however, to perform capacitated-clustering the laod per cluster needs to meet a threshold
+# The function merges the clusters to reach min threshold.
+# This K-means implementation modifies the cluster assignment step (E in EM) by formulating it as a Minimum Cost Flow (MCF) linear network optimisation problem. This is then solved using a cost-scaling push-relabel algorithm and uses Google's Operations Research tools's SimpleMinCostFlow which is a fast C++ implementation
+
+clusters %>%
+  arrange(date)
+
+# Creating dataset to test the algorithm
+clusters %>%
+  filter(date == "2022-08-01") %>%
+  mutate(cluster = loc_cluster) %>%
+  select(lat, long, cluster,demand) ->
+  data
+
+k_clusters <- max(unique(clusters$loc_cluster)) #14
+  
+write.csv(data, file = "cluster_data.csv", row.names = F)
+```
+
+```{python}
+!pip install k-means-constrained
+!pip install numpy
+```
+
+
+
+```{r fig.height=9, fig.width=12}
+
+cap_dt<- data.table(data)
+hulls = cap_dt[,.SD[chull(long,lat)],by=.(cluster)]
+
+#Visualising
+ggplot() +
+  geom_point(data = cap_dt, aes(
+    x = long,
+    y = lat,
+    color = as.factor(cluster)
+  )) +
+  geom_polygon(data = hulls, aes(
+    x = long,
+    y = lat,
+    fill = as.factor(cluster),
+    alpha = 0.85
+  )) +
+  theme_bw() +
+  theme(text = element_text(face = 'bold', size = 22),
+        plot.title = element_text(size =
+                                    22)) +
+  coord_equal() +
+  theme(legend.position = 'none')
+```
+
+```{r}
+data %>%
+  group_by(cluster) %>%
+  summarise(clustered_demand = sum(demand)) ->
+  cluster_demand
+```
+
+```{r}
+
+for(cluster in cluster_demand){
+  print(cluster)
+  }
+ 
+```
+
+```{r}
+PATH <-
+  "/rstudio-dwh-s3/shibaprasad/sc_pickup_drop_august2022.RData"
+
+data <- get(load(PATH))
+fmlm_sc <- data
+cnid_input <- 'INTNAQRV'
+prod_type = c("Heavy", "B2B")
+  fmlm_sc %>%
+    mutate(date = as.Date(dispatch_date)) %>%
+    filter(cnid %in% cnid_input & purpose == 'LM') %>%
+    filter(product_type %in% prod_type) %>%
+    filter(!is.na(customer_lat) &
+             !is.na(customer_long)) -> lm_selected_sc
+```
+
+
+
+
+
+

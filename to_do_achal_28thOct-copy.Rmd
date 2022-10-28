@@ -1,0 +1,81 @@
+---
+title: "To-Do Achal"
+output: html_notebook
+---
+
+```{r}
+library(tidyverse)
+library(dbplyr)
+library(DBI)
+library(patchwork)
+library(lubridate)
+library(arrow)
+library(timeDate)
+library(httr)
+library(formattable)
+```
+
+
+Load the data file.
+
+```{r}
+load("/rstudio-dwh-s3/shibaprasad/b2b_heavy_split/trip_cost_comparison.RData")
+
+trip_cost_comparison
+```
+
+Get the list of CNs and Dates.
+
+```{r}
+trip_cost_comparison %>%
+  mutate(dow=weekdays(date)) %>%
+  filter(dow!='Sunday' & date!=as.Date('2022-08-15') & cost_diff_perc>=0) %>%
+  distinct(cn, cnid, date)
+```
+
+Go to my code and get the functions.
+
+***Please 'Save as' these files in your respective folder. Don't sudo copy it.***
+
+1. /home/shibaprasad/b2b_heavy_split/b2b_heavy_split_analysis_without_mVRP.R
+2. /home/shibaprasad/b2b_heavy_split/capacitated_clustering_tsp.R
+
+***Please 'Save as' these files in your respective folder. Don't sudo copy it.***
+
+Run the capacitatedclusteringTSP function for these SCs for the list of dates from above. Make changes accordingly. 
+Make sure to change the file directory. 
+
+Store the results for three cases: B2B, Heavy, B2B & Heavy. The output for one PDT type should be looking something like this:
+```{r}
+structure(list(cluster = c(1L, 2L, 3L, 7L, 1L), date = structure(c(19229, 
+19229, 19229, 19229, 19229), class = "Date"), cen_lat = c(22.686985375, 
+22.6796784210526, 22.6913098156468, 22.6796784210526, 22.7109534159664
+), cen_long = c(88.4042464736842, 88.3730124898477, 88.3765662443598, 
+88.373011, 88.4707062609649), purpose = c("LM", "LM", "LM", "LM", 
+"LM"), loc_cluster = c(3, 3, 3, 3, 1), km_cen_lat = c(22.6918776640459, 
+22.6918776640459, 22.6918776640459, 22.6918776640459, 22.7214528584319
+), km_cen_long = c(88.3878912750114, 88.3878912750114, 88.3878912750114, 
+88.3878912750114, 88.4840385556028), count = c(3L, 2L, 8L, 1L, 
+4L), demand = c(991.00002, 850.01826, 1241.02067, 1541.97111, 
+799.45314), tsp_distance = c(12.489, 0, 11.016, 0, 6.788), tsp_time = c(83.26, 
+0, 73.44, 0, 45.2533333333333), serving_time = c(95.67600072, 
+70.60065736, 204.67674412, 75.51095996, 108.78031304), plat = c(22.695223, 
+22.695223, 22.695223, 22.695223, 22.695223), plong = c(88.48876, 
+88.48876, 88.48876, 88.48876, 88.48876), stem_time = c(136.035021929823, 
+192.561730679474, 170.290178657092, 192.563915789462, 49.5500940021562
+), cluster_time = c(314.971022649823, 263.162388039474, 448.406922777092, 
+268.074875749462, 203.58374037549), load_category = c("ace", 
+"ace", "truck12ft", "truck12ft", "ace"), cost = c(2800, 2800, 
+3300, 3300, 2800), contracted_shift = c(0.437459753680309, 0.365503316721492, 
+0.622787392745961, 0.372326216318698, 0.282755194965958), trip_cost = c(2800, 
+2800, 3300, 3300, 2800), cnid = c("IN700069A1A", "IN700069A1A", 
+"IN700069A1A", "IN700069A1A", "IN700069A1A"), product_type = c("B2B", 
+"B2B", "B2B", "B2B", "B2B")), row.names = c(NA, -5L), class = c("tbl_df", 
+"tbl", "data.frame"))-> demo_output
+
+demo_output
+```
+Happy Coding! :-)
+
+
+
