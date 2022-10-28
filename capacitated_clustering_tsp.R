@@ -27,6 +27,11 @@ CapClusteringWithTSP <-
     
     # Handle the specific date condition
     for(input_date in dates) {
+      
+      input_date <- as.Date(input_date, origin='1970-01-01')
+      
+      print(input_date)
+      
       lm_sc_adjusted_cluster %>%
         filter(date == input_date) -> daily_fmlm
       
