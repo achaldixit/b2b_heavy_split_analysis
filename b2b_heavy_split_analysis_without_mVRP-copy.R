@@ -15,7 +15,7 @@ library(ROI.plugin.glpk)
 library(osrm)
 
 # make sure to setwd() and keep the file in same directory
-source("/home/shibaprasad/b2b_heavy_split/capacitated_clustering_tsp.R")
+source("/home/achal/R_codes/b2b_heavy_split_analysis/capacitated_clustering_tsp.R")
 
 PATH <-
   "/rstudio-dwh-s3/shibaprasad/sc_pickup_drop_august2022.RData"
@@ -66,6 +66,7 @@ c("INDLAAFL", "INTNAQRV", "INMHASHG", "INTNARDZ", "INDLAOSF","INWBAPMU", "INKAAS
 GetTripCosts <- function(data,
                          prod_type,
                          cnid_input,
+                         dates,
                          capacity_constraint = 1000,
                          lowest_cluster_demand = 1000,
                          lowest_large_cluster_demand = 3000,
@@ -79,6 +80,7 @@ GetTripCosts <- function(data,
   
   fmlm_sc %>%
     mutate(date = as.Date(dispatch_date)) %>%
+    filter(date %in% dates) %>%
     filter(cnid %in% cnid_input & purpose == 'LM') %>%
     filter(product_type %in% prod_type) %>%
     filter(!is.na(customer_lat) &
@@ -228,7 +230,10 @@ GetTripCosts <- function(data,
   #   filter(date >= as.Date('2022-08-11') &
   #            date <= as.Date('2022-08-12')) -> d
   
-  CapClusteringWithTSP(lm_sc_adjusted_cluster, truck_speed) -> full_trip_details
+  CapClusteringWithTSP(lm_sc_adjusted_cluster, 
+                       truck_speed,
+                       dates = dates
+                       ) -> full_trip_details
   
   # add SC Location
   
@@ -287,13 +292,23 @@ GetTripCosts <- function(data,
 }
 
 # Function to run bulk analysis for Multiple SC's
-RunProductAnalysis <- function(data, cnid_list, product_type) {
+RunProductAnalysis <- function(data, cnid_df, product_type) {
   analysis_output <- tibble()
-  for (cnid in cnid_list) {
-    cnid_output <-
-      GetTripCosts(data, cnid_input = cnid, prod_type = product_type) %>%
-      mutate(product_type = toString(product_type))
+  cnid_list <- cnid_df$cnid
+  for (cnid_in in cnid_list) {
     
+    # Obtain the dates to run for
+    cnid_df %>%
+      filter(cnid == cnid_in) ->
+      cnid_single
+      
+    dates <- cnid_single$date
+    cnid_output <-
+      GetTripCosts(data, 
+                   cnid_input = cnid_in, 
+                   prod_type = product_type,
+                   dates = dates) %>%
+      mutate(product_type = toString(product_type))
     
     analysis_output %>%
       bind_rows(cnid_output) ->
@@ -309,10 +324,24 @@ RunProductAnalysis <- function(data, cnid_list, product_type) {
   return(analysis_output)
 }
 
+load("/rstudio-dwh-s3/shibaprasad/b2b_heavy_split/trip_cost_comparison.RData")
+
+trip_cost_comparison %>%
+  mutate(dow = weekdays(date)) %>%
+  filter(dow != 'Sunday' &
+           date != as.Date('2022-08-15') & cost_diff_perc >= 0) %>%
+  distinct(cn, cnid, date) ->
+  sample_cnid
+
+sample_cnid %>%
+  filter(cnid == "IN700069A1A") ->
+  sample
+
 product_type = c("B2B")
 #cnid_list = c('IN700069A1A')#, "INTNAQRV", "INMHASHG") #"INTNARDZ", "INDLAOSF")
-analysis_output <- RunProductAnalysis(data, cnid_list, product_type = product_type)
+#analysis_output <- RunProductAnalysis(data, cnid_list, product_type = product_type)
 
+analysis_output <- RunProductAnalysis(data, sample, product_type = product_type)
 
 Sys.umask(200)
 product_type = str_replace(toString(product_type), ",","")

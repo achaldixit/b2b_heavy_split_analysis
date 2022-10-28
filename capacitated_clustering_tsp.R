@@ -1,9 +1,10 @@
 CapClusteringWithTSP <-
   function(lm_sc_adjusted_cluster,
            truck_speed = 9,
-           the_date = min(lm_sc_adjusted_cluster$date, na.rm = T),
-           end_date = max(lm_sc_adjusted_cluster$date, na.rm = T),
-           capacity_constraint=1000) {
+           dates,
+           #the_date = min(lm_sc_adjusted_cluster$date, na.rm = T),
+           #end_date = max(lm_sc_adjusted_cluster$date, na.rm = T),
+           capacity_constraint = 1000) {
     library(dplyr, warn.conflicts = FALSE)
     time_per_drop <- 20 #mins
     
@@ -23,9 +24,11 @@ CapClusteringWithTSP <-
     
     #Run the loop for all the dates.
     
-    while (the_date <= end_date) {
+    
+    # Handle the specific date condition
+    for(input_date in dates) {
       lm_sc_adjusted_cluster %>%
-        filter(date == the_date) -> daily_fmlm
+        filter(date == input_date) -> daily_fmlm
       
       #Get the bigger clusters for that day
       
@@ -91,8 +94,8 @@ CapClusteringWithTSP <-
             #Approximate number of clusters that will be formed. This is also the total number of trips.
             
             number_of_clusters <-
-              ceiling(sum(dropping_points_ordered$demand) / (capacity_constraint * 0.9)) +
-              1
+              ceiling(sum(dropping_points_ordered$demand) / (capacity_constraint * 0.8)) +
+              2
             
             #For the first iteration, the centroids will be the points with larger loads
             
@@ -115,7 +118,8 @@ CapClusteringWithTSP <-
                 
                 #All the points will have 'NA' from the beginning.
                 
-                cluster_list <- rep(NA, nrow(dropping_points_ordered))
+                cluster_list <-
+                  rep(NA, nrow(dropping_points_ordered))
                 
                 #The centroids will have a defined clusters from the beginning. So the NAs for them will be replaced by numbers. These are the unique identification field for clusters.
                 
@@ -140,7 +144,8 @@ CapClusteringWithTSP <-
                   
                   #Randomly select one point.
                   
-                  selected_point <- slice_sample(points_for_clustering)
+                  selected_point <-
+                    slice_sample(points_for_clustering)
                   
                   #Select the unique id of that pont
                   
@@ -162,7 +167,8 @@ CapClusteringWithTSP <-
                     geodist(x = as.matrix(selected_point_location),
                             y = as.matrix(centroids)) / 1000
                   
-                  priority <- dist_from_clusters / selected_point_demand
+                  priority <-
+                    dist_from_clusters / selected_point_demand
                   
                   nearest_cluster <- which.min(priority)
                   
@@ -189,7 +195,8 @@ CapClusteringWithTSP <-
                       if (selected_point_demand < nearest_cluster_capacity) {
                         cluster_list[selected_point_id] <- nearest_cluster
                         
-                        dropping_points_ordered$cluster <- cluster_list
+                        dropping_points_ordered$cluster <-
+                          cluster_list
                         
                         cluster_capacity[nearest_cluster] <-
                           nearest_cluster_capacity - selected_point_demand
@@ -284,29 +291,44 @@ CapClusteringWithTSP <-
             #The load of the bad cluster will be allocated to the nearest good cluster.
             
             if (nrow(bad_truck_details) > 0) {
-              for (i_bad_trucks in 1:nrow(bad_truck_details)) {
-                bad_truck_details[i_bad_trucks, ] -> selected_bad_truck
+              if (nrow(good_truck_details) == 0) {
+                bad_truck_details %>%
+                  mutate(cluster = 1) %>%
+                  group_by(cluster) %>%
+                  mutate(cen_lat = mean(lat),
+                         cen_long = mean(long)) %>%
+                  ungroup() -> capacitated_clustered_trips
                 
-                truck_distances <-
-                  rdist(x1 = selected_bad_truck[, c('lat', 'long')], x2 = good_truck_details[, c('cen_lat', 'cen_long')]) *
-                  110
                 
-                nearest_truck <- which.min(truck_distances)
+              } else{
+                for (i_bad_trucks in 1:nrow(bad_truck_details)) {
+                  bad_truck_details[i_bad_trucks, ] -> selected_bad_truck
+                  
+                  truck_distances <-
+                    rdist(x1 = selected_bad_truck[, c('lat', 'long')], x2 = good_truck_details[, c('cen_lat', 'cen_long')]) *
+                    110
+                  
+                  nearest_truck <- which.min(truck_distances)
+                  
+                  good_truck_details %>%
+                    slice(nearest_truck) -> nearest_good_truck
+                  
+                  selected_bad_truck$cluster <-
+                    nearest_good_truck$cluster
+                  
+                  modified_bad_truck %>%
+                    bind_rows(selected_bad_truck) -> modified_bad_truck
+                }
                 
                 good_truck_details %>%
-                  slice(nearest_truck) -> nearest_good_truck
+                  bind_rows(modified_bad_truck) %>%
+                  group_by(cluster) %>%
+                  mutate(cen_lat = mean(lat),
+                         cen_long = mean(long)) %>%
+                  ungroup() -> capacitated_clustered_trips
                 
-                selected_bad_truck$cluster <- nearest_good_truck$cluster
-                
-                modified_bad_truck %>%
-                  bind_rows(selected_bad_truck) -> modified_bad_truck
               }
               
-              good_truck_details %>%
-                bind_rows(modified_bad_truck) %>%
-                group_by(cluster) %>%
-                mutate(cen_lat = mean(lat),
-                       cen_long = mean(long)) -> capacitated_clustered_trips
               
             }
             
@@ -329,6 +351,18 @@ CapClusteringWithTSP <-
           }
           
         }
+        
+        capacitated_clustered_trips %>%
+          group_by(cluster, km_cen_lat, km_cen_long) %>%
+          count() %>%
+          ungroup() %>%
+          group_by(cluster) %>%
+          mutate(perc = n / sum(n)) %>%
+          slice_max(perc, n = 1) %>%
+          ungroup() %>%
+          distinct(cluster, km_cen_lat, km_cen_long) %>%
+          left_join(capacitated_clustered_trips %>% select(-km_cen_lat,-km_cen_long),
+                    by = "cluster") -> capacitated_clustered_trips
         
         #TSP for each trip to calculate the time to serve the cluster.
         
@@ -356,7 +390,7 @@ CapClusteringWithTSP <-
           picked_tsp %>%
             bind_rows(
               data.frame(
-                date = as.Date(the_date),
+                date = as.Date(input_date),
                 cluster = x_cluster,
                 tsp_distance = (tour_length(tour) * (truck_speed / 60)),
                 tsp_time = tour_length(tour)
@@ -375,9 +409,11 @@ CapClusteringWithTSP <-
                    loc_cluster,
                    km_cen_lat,
                    km_cen_long) %>%
-          summarise(count = n(),
-                    demand = sum(demand),
-                    .groups = 'drop') %>%
+          summarise(
+            count = n(),
+            demand = sum(demand),
+            .groups = 'drop'
+          ) %>%
           ungroup() %>%
           inner_join(picked_tsp, by = c("cluster", "date")) %>%
           mutate(serving_time = ((count * time_per_drop) + (demand * time_per_kg))) -> picked_full_details
@@ -386,11 +422,10 @@ CapClusteringWithTSP <-
           bind_rows(picked_full_details) -> full_trip_details
       }
       
-      print(paste0('Done for the day: ', the_date, ' ', Sys.time()))
+      print(paste0('Done for the day: ', input_date, ' ', Sys.time()))
       
       #Move on to the next day.
       
-      the_date <- the_date + 1
     }
     
     return(full_trip_details)
