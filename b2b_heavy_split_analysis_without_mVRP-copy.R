@@ -294,7 +294,8 @@ GetTripCosts <- function(data,
 # Function to run bulk analysis for Multiple SC's
 RunProductAnalysis <- function(data, cnid_df, product_type) {
   analysis_output <- tibble()
-  cnid_list <- cnid_df$cnid
+  cnid_list <- unique(cnid_df$cnid)
+  print(cnid_list)
   for (cnid_in in cnid_list) {
     
     # Obtain the dates to run for
