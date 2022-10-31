@@ -1,0 +1,162 @@
+```{r}
+library(tidyverse)
+library(data.table) 
+library(lubridate)
+library(geodist)
+library(ompr)
+library(ompr.roi)
+library(ROI.plugin.symphony)
+library(ggrepel)
+# Mention parameters in chunks to get notebook outputs
+library(palmerpenguins)
+library(TSP)
+library(fields)
+library(Rglpk)
+library(ROI.plugin.glpk)
+library(osrm)
+
+con <- dbConnect(
+  RPresto::Presto(),
+  host='presto-adhoc.delhivery.com',
+  port=8889,
+  user='r-studio-us-east',
+  source='rstudio',
+  catalog='awsdatacatalog',
+  schema='express_dwh',
+)
+```
+
+```{r}
+start_date <- "2022-08-01"
+end_date <- "2022-08-31"
+
+
+con %>%
+  tbl(in_schema("hudi_db", "hudi_facility_parquet")) %>%
+  group_by(property_facility_facility_code) %>%
+  filter(action_date == max(action_date)) %>%
+  ungroup() %>%
+  filter(sql("property_facility_facility_type LIKE '%SC%'")) %>%
+  select(
+    cn = property_facility_name,
+    type = property_facility_facility_type,
+    cnid = property_facility_facility_code,
+  ) %>%
+  inner_join(
+    tbl(con, in_schema('express_dwh', 'dispatch_lm_s3_parquet')) %>%
+      filter(ad >= start_date & ad < end_date) %>%
+      select(
+        cnid,
+        cn,
+        dwbn,
+        md,
+        mts_distance,
+        ds,
+        cd,
+        cpd,
+        mts_distance,
+        wbn_count,
+        vt,
+        mts_confidence,
+        mwbn
+      ) %>%
+      filter(ds == 'complete' & !is.na(mts_distance)) %>%
+      mutate(
+        dispatch_duration = sql("date_diff('minute', cd, cpd)"),
+        dispatch_start_date = sql("date_trunc('day', date_add('minute', 330, cd))"),
+        dispatch_end_date = sql("date_trunc('day', date_add('minute', 330, cpd))"),
+        cd = sql("date_add('minute', 330, cd)"),
+        cpd = sql("date_add('minute', 330, cpd)")
+      ),
+    by = "cnid"
+  ) %>%
+  collect() -> lm
+
+
+lm %>%
+  inner_join(tbl(con, in_schema('express_dwh', 'dispatch_lm_s3_parquet')) %>%
+               )
+```
+
+```{r}
+head(lm)
+```
+
+
+```{r}
+# Do this join at the end
+
+# This fmlm_sc df is loaded from Shiba for b2b_heavy split analysis
+fmlm_sc %>%
+  inner_join(fmlm_sc %>%
+               distinct(cnid, product_type) %>%
+               count(cnid) %>%
+               filter(n == 2),
+             by = 'cnid') %>%
+  filter(!str_detect(ptype, 'FC')) %>%
+  group_by(cn, cnid) %>%
+  summarise(cn_demand = sum(weight, na.rm = T), .groups = 'drop') %>%
+  arrange(desc(cn_demand)) %>%
+  mutate(cum_demand_perc = 100 * cumsum(cn_demand) / sum(cn_demand)) %>%
+  filter(cum_demand_perc < 81) %>%
+  select(cnid, cn) %>%
+  left_join(lm) %>%
+  filter(mts_confidence == "high") %>%
+  mutate(speed = (mts_distance*60)/(dispatch_duration*1000)) ->
+  lm_sc_data
+```
+
+
+
+```{r}
+hist(lm_sc_data$speed,
+  xlab = "Speed (km/hr)",
+  main = "Histogram of LM SC dipatch Speed",
+  breaks = sqrt(nrow(lm_sc_data)))
+```
+```{r}
+summary(lm_sc_data$speed)
+```
+
+```{r}
+out <- boxplot.stats(lm_sc_data$speed)$out
+
+boxplot(lm_sc_data$speed)
+```
+```{r}
+summary(out)
+```
+```{r}
+hist(lm$mts_distance,
+  xlab = "Distance",
+  main = "Histogram of LM SC dipatch distance",
+  breaks = sqrt(nrow(lm_sc_data)))
+```
+1. Outlier analysis for Mts_distance (around 90%)
+2. Find speed for each cnid (Avg or Median ?)
+3. Join with fmlm sc table
+4. use that as hash table for truck speed ...
+
+```{r}
+summary(lm$mts_distance)
+```
+```{r}
+
+# %ile of distances
+quantile(lm$mts_distance, probs = seq(0.85, 1, 0.025))
+```
+
+```{r}
+plot(quantile(lm$mts_distance, probs = seq(0.5, 1, 0.025)))
+```
+Taking 97.25 %ile as outlier cutoff : 128000
+
+```{r}
+lm %>%
+  filter(mts_distance < 128000) %>%
+  group_by(cnid) %>%
+  summarise(avg_speed = sum(mts_distance/1000) / sum(dispatch_duration/60),
+            # This median logic seems a bit fuckup
+            median_speed = median(mts_distance/1000)/median(dispatch_duration/60))
+```
+
