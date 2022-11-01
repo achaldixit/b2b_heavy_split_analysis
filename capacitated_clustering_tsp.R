@@ -1,3 +1,6 @@
+
+# instead of doing this pass truck_speed during the CapClustring call
+# Fix later
 truck_speed <- function(cnid){
   #
   #
