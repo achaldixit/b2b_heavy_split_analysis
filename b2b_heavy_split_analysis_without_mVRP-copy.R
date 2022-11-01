@@ -69,8 +69,7 @@ GetTripCosts <- function(data,
                          dates,
                          capacity_constraint = 1000,
                          lowest_cluster_demand = 1000,
-                         lowest_large_cluster_demand = 3000,
-                         truck_speed = 9) {
+                         lowest_large_cluster_demand = 3000) {
   time_per_drop <- 20 #mins
   
   time_per_kg <- 0.036 #mins
@@ -223,7 +222,17 @@ GetTripCosts <- function(data,
     }
   }
   
+  # Fix later: Include the reference table for truck speed
+  GetTruckSpeed <- function(cnid_input){
+
+    truck_speeds = list("IN700069A1A" = 5)
+    
+    return(truck_speeds[cnid_input][[1]])
+  }
   
+  truck_speed <- GetTruckSpeed(cnid_input)
+  print("Truck Speed")
+  print(truck_speed)
   # CapacitatedClusteringWithTSP source the R file for this
   
   # lm_sc_adjusted_cluster %>%
@@ -303,6 +312,7 @@ RunProductAnalysis <- function(data, cnid_df, product_type) {
       filter(cnid == cnid_in) ->
       cnid_single
       
+    # Only run for the dates specified
     dates <- cnid_single$date
     cnid_output <-
       GetTripCosts(data, 

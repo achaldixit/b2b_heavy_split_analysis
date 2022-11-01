@@ -1,17 +1,9 @@
 
-# instead of doing this pass truck_speed during the CapClustring call
-# Fix later
-truck_speed <- function(cnid){
-  #
-  #
-  #
-  #
-  return(truck_speed)
-}
+
 
 CapClusteringWithTSP <-
   function(lm_sc_adjusted_cluster,
-           truck_speed = 9,
+           truck_speed,
            dates,
            #the_date = min(lm_sc_adjusted_cluster$date, na.rm = T),
            #end_date = max(lm_sc_adjusted_cluster$date, na.rm = T),
@@ -394,7 +386,7 @@ CapClusteringWithTSP <-
               osrmTable(loc = selected_cluster[, c('id', 'long', 'lat')], measure = 'distance')
             
             tsp_matrix <-
-              ((distance_list$distances) / 1000) * (60 / truck_speed(cnid_input))
+              ((distance_list$distances) / 1000) * (60 / truck_speed)
             
           } else{
             tsp_matrix <- as.matrix(0, 1, 1)
@@ -408,7 +400,7 @@ CapClusteringWithTSP <-
               data.frame(
                 date = as.Date(input_date),
                 cluster = x_cluster,
-                tsp_distance = (tour_length(tour) * (truck_speed(cnid_input) / 60)),
+                tsp_distance = (tour_length(tour) * (truck_speed/ 60)),
                 tsp_time = tour_length(tour)
               )
             ) -> picked_tsp
